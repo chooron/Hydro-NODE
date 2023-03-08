@@ -1,4 +1,6 @@
 checkpoint
 .idea
+venv
 data
 *.pyc
+*.zip

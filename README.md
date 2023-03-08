@@ -24,5 +24,8 @@ Torch version for Hydro-NODE [https://github.com/marv-in/HydroNODE]
 - This project only implements the training process of the Hydro-NODE, the testing is to be continued
 
 - The accuracy of the M50 and M100 don't reach the origin project, some modify (GPU support) will also come in soon
+
+- Currently, this project implements two solver for Hydro-NODE, including `torchcde` and `torchdiffeq`,
+the parameters `atol` and `rotl` can affect the 
   
   
