@@ -8,6 +8,7 @@ from sklearn.metrics import r2_score
 from models.common_net import M100_NN, M50_NN
 from torch.utils.data import Dataset, DataLoader
 from utils.training_utils import BaseLearner, forecast, train
+from models.customer_dataset import PretrainDataset
 
 # project info
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
