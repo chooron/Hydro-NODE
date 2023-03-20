@@ -11,7 +11,8 @@ Torch version for Hydro-NODE [https://github.com/marv-in/HydroNODE]
 
 ## How to run the experiment
 
-- step 1, run `run_exp_hydro.py` to get the train data, save in the `data`
+- step 0, run `M0_optimization` to get the best parameters for the model
+- step 1, run `M0_main.py` to get the train data, save in the `data`
 - step 2, run `M50_main.py` for pretraining and training the M50 model
 - step 3, run `M100_main.py` for pretraining and training the M100 model
 

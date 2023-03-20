@@ -10,6 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from models.customer_dataset import PretrainDataset
 from utils.training_utils import BaseLearner, forecast, train
+from models.customer_dataset import PretrainDataset
 
 # project info
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
