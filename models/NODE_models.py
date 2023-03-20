@@ -16,21 +16,23 @@ class M50(nn.Module):
         self.f, self.Smax, self.Qmax, self.Df, self.Tmax, self.Tmin = params
         self.ET_net = ET_net
         self.ode_lib = ode_lib
-        self.ET_net.train()
         self.Q_net = Q_net
-        self.Q_net.train()
         self.precp_interp, self.temp_interp, self.lday_interp = interps
 
     def forward(self, x, t_eval):
         def solve_ode(t, S):
             from models.common_net import Ps, Pr, M, step_fct
             S_snow, S_water = S
-            t = t.detach()
-            if self.ode_lib == 'torchode':
-                t = t[0]
-            precp, temp, lday = torch.from_numpy(self.precp_interp(t.numpy()).astype(np.float32)).to(device), \
-                torch.from_numpy(self.temp_interp(t.numpy()).astype(np.float32)).to(device), \
-                torch.from_numpy(self.lday_interp(t.numpy()).astype(np.float32)).to(device)
+
+            precp = self.precp_interp.evaluate(t).to(torch.float32)
+            temp = self.temp_interp.evaluate(t).to(torch.float32)
+            lday = self.lday_interp.evaluate(t).to(torch.float32)
+
+            # t = t.detach().cpu()
+            # precp = torch.from_numpy(self.precp_interp(t.numpy()).astype(np.float32)).to(device)
+            # temp = torch.from_numpy(self.temp_interp(t.numpy()).astype(np.float32)).to(device)
+            # lday = torch.from_numpy(self.lday_interp(t.numpy()).astype(np.float32)).to(device)
+
             ET_output = self.ET_net(torch.tensor([S_snow, S_water, temp]))
             Q_output = self.Q_net(torch.tensor([S_water, precp]))
 
@@ -74,13 +76,13 @@ class M100(nn.Module):
         def solve_ode(t, S):
             from models.common_net import Ps, Pr, M, step_fct
             S_snow, S_water = S
-            t = t.detach()
-            precp, temp, lday = torch.from_numpy(self.precp_interp(t.numpy()).astype(np.float32)), \
-                torch.from_numpy(self.temp_interp(t.numpy()).astype(np.float32)), \
-                torch.from_numpy(self.lday_interp(t.numpy()).astype(np.float32))
-            net_output = self.net(torch.tensor([S_snow, S_water, precp, temp]))
+            t = t.detach().cpu()
+            precp = torch.from_numpy(self.precp_interp(t.numpy()).astype(np.float32)).to(device)
+            temp = torch.from_numpy(self.temp_interp(t.numpy()).astype(np.float32)).to(device)
+            lday = torch.from_numpy(self.lday_interp(t.numpy()).astype(np.float32)).to(device)
+            net_output = self.net(torch.tensor([S_snow, S_water, precp, temp]).to(device))
             melt_output = torch.relu(step_fct(S_snow)) * torch.sinh(net_output[2])
-            dS_1 = torch.relu(torch.sinh(net_output[3]) * step_fct(temp)) - melt_output
+            dS_1 = torch.relu(torch.sinh(net_output[3]) * step_fct(-temp)) - melt_output
             dS_2 = torch.relu(torch.sinh(net_output[4])) + melt_output - step_fct(
                 S_water) * lday * torch.exp(net_output[0]) - step_fct(S_water) * torch.exp(net_output[1])
             return dS_1, dS_2
@@ -107,5 +109,6 @@ class M100(nn.Module):
             print('complete!')
         else:
             raise NotImplementedError
-        y_hat = torch.exp(self.net(torch.concat([sol_0.unsqueeze(1), sol_1.unsqueeze(1), x[:, 2:4]], dim=1))[:, 1:2])
+        y_hat = torch.exp(
+            self.net(torch.concat([sol_0.unsqueeze(1), sol_1.unsqueeze(1), x[:, 2:4]], dim=1).to(device))[:, 1:2])
         return y_hat

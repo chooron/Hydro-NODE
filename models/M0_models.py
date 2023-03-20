@@ -1,5 +1,6 @@
 # set the initial value of the model and the initial parameters
 import numpy as np
+import torch
 
 step_fct = lambda x: (np.tanh(5.0 * x) + 1.0) * 0.5
 Ps = lambda P, T, Tmin: step_fct(Tmin - T) * P
@@ -45,6 +46,9 @@ class M0:
         :return: dS1, dS2
         """
         S1, S2 = S
+        # precp = precp_interp.evaluate(torch.tensor(t)).item()
+        # temp = temp_interp.evaluate(torch.tensor(t)).item()
+        # lday = lday_interp.evaluate(torch.tensor(t)).item()
         precp = precp_interp(t)
         temp = temp_interp(t)
         lday = lday_interp(t)

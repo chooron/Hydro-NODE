@@ -4,7 +4,9 @@ import pandas as pd
 import numpy as np
 import os
 
-from scipy.interpolate import PchipInterpolator
+import torch
+from scipy.interpolate import CubicSpline, PchipInterpolator, CubicHermiteSpline,interp1d
+from torchcubicspline import NaturalCubicSpline, natural_cubic_spline_coeffs
 
 # data source path (download from https://ral.ucar.edu/solutions/products/camels)
 base_data_path = r'E:\CAMELS\basin_dataset_public_v1p2'
@@ -93,11 +95,21 @@ def prepare_data(forcing_df, flow_df):
         all_data_df['Temp'].values, \
         all_data_df['Lday'].values
     t_series = np.linspace(0, len(precp_series) - 1, len(precp_series))
-    precp_interp = PchipInterpolator(t_series, precp_series)
-    temp_interp = PchipInterpolator(t_series, temp_series)
-    lday_interp = PchipInterpolator(t_series, lday_series)
-    return train_data_df, test_data_df,train_flow_df,test_flow_df, precp_interp, temp_interp, lday_interp
+
+    precp_interp = CubicSpline(t_series, precp_series)
+    temp_interp = CubicSpline(t_series, temp_series)
+    lday_interp = CubicSpline(t_series, lday_series)
+    # 更换为CubicSpline
+    # precp_interp = NaturalCubicSpline(
+    #     natural_cubic_spline_coeffs(t_series, torch.from_numpy(precp_series).unsqueeze(1)))
+    # temp_interp = NaturalCubicSpline(
+    #     natural_cubic_spline_coeffs(t_series, torch.from_numpy(temp_series).unsqueeze(1)))
+    # lday_interp = NaturalCubicSpline(
+    #     natural_cubic_spline_coeffs(t_series, torch.from_numpy(lday_series).unsqueeze(1)))
+    return train_data_df, test_data_df, train_flow_df, test_flow_df, precp_interp, temp_interp, lday_interp
 
 
 if __name__ == '__main__':
     forcing_df, flow_df = load_data(6431500)
+    train_data_df, test_data_df, train_flow_df, test_flow_df, precp_interp, temp_interp, lday_interp = prepare_data(
+        forcing_df, flow_df)

@@ -53,8 +53,14 @@ net_pretrained_model = torch.load(net_save_path).to(device)
 
 # M100 train
 # 1.prepare the train dataset
+# note: use two year for validation
 m100_train_dataloader = DataLoader(TrainDataset(
-    train_data_df,
+    train_data_df.iloc[:-365 * 10],
+    input_cols=['S_snow', 'S_water', 'Precp', 'Temp', 'Lday'],
+    target_cols=['Q_obs']),
+    batch_size=len(train_data_df), shuffle=False)
+m100_val_dataloader = DataLoader(TrainDataset(
+    train_data_df.iloc[-365 * 10:],
     input_cols=['S_snow', 'S_water', 'Precp', 'Temp', 'Lday'],
     target_cols=['Q_obs']),
     batch_size=len(train_data_df), shuffle=False)
@@ -71,11 +77,16 @@ m100_model = M100(net=net_pretrained_model,
 
 # 3.train the model based on pytorch-lightning
 optimizer = torch.optim.Adam(m100_model.parameters(), lr=0.001)
-m100_leaner = BaseLearner(m100_model, loss_metric=loss_metric, optimizer=optimizer)
-m100_trained_model, m100_trained_learner = train(
-    m100_leaner, m100_train_dataloader,
-    os.path.join(save_path, str(basin_id), 'train', 'M100-NSE'),
-    max_epochs=100)
+
+m100_trained_learner = BaseLearner(m100_model, loss_metric=loss_metric, optimizer=optimizer).load_from_checkpoint(
+    checkpoint_path=r'/checkpoint/1013500/train/M50-Loss/M100-NSE\epoch=20-val_loss=0.0941.ckpt',
+    model=m100_model, loss_metric=loss_metric, optimizer=optimizer)
+
+# m100_trained_model, m100_trained_learner = train(
+#     m100_leaner, m100_train_dataloader,
+#     os.path.join(save_path, str(basin_id), 'train', 'M100-NSE'),
+#     val_dataloaders=m100_val_dataloader,
+#     max_epochs=100)
 
 # 4.test the trained model
 train_real_arr, train_pred_arr = forecast(m100_trained_learner, m100_train_dataloader)

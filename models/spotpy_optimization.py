@@ -5,7 +5,7 @@ from sklearn.metrics import mean_squared_error as mse
 
 
 def nse(real, pred):
-    return 1 - (np.sum((pred - real) ** 2) / np.sum((real - np.mean(real)) ** 2))
+    return (np.sum((pred - real) ** 2) / np.sum((real - np.mean(real)) ** 2))
 
 
 class model_setup(object):
@@ -43,10 +43,10 @@ class model_setup(object):
         return temp_params
 
 
-def optimization(model, data, params_names, params_low_bounds, params_up_bounds):
+def optimization(model, data, params_names, params_low_bounds, params_up_bounds, epochs=100):
     sampler = algorithms.sceua(model_setup(model, data, params_names, params_low_bounds, params_up_bounds),
                                dbname='none', dbformat='ram', random_state=42)
-    sampler.sample(100)  # Sample 100.000 parameter combinations
+    sampler.sample(epochs)  # Sample 100.000 parameter combinations
     results = sampler.getdata()
     best_params = analyser.get_best_parameterset(results, maximize=False)[0]
     return best_params

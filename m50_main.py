@@ -4,26 +4,29 @@ import numpy as np
 import pandas as pd
 import torch
 import matplotlib.pyplot as plt
-
 from models.NODE_models import M50
 from scipy.interpolate import PchipInterpolator
 from torch.utils.data import DataLoader
-from sklearn.metrics import r2_score, mean_squared_error
-
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from models.customer_dataset import TrainDataset
-from utils.training_utils import BaseLearner, NSELoss1D, forecast, train
+from utils.loss_utils import NSELoss
+from utils.training_utils import BaseLearner, forecast, train
 
 # project info
-basin_id = 1013500
+basin_id = 6431500
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 save_path = os.path.join(os.getcwd(), 'checkpoint')
-loss_metric = NSELoss1D().to(device)
+loss_metric = NSELoss().to(device)
 # loss_metric = torch.nn.MSELoss()
+# loss_metric = QuantileLoss(q=0.75)
 solver_lib = 'torchdiffeq'
 
 # static model param
-f, Smax, Qmax, Df, Tmax, Tmin = 0.017, 1709.46, 18.47, 2.67, 0.176, -2.09  # 1013500
-# f, Smax, Qmax, Df, Tmax, Tmin = 963.051, 217.796, 34.2572, 0.0558933, 0.304415, -1.00949  # 6431500
+best_params = pd.read_csv(r'checkpoint/{}/best_params_df.csv'.format(basin_id)).values
+# static model param
+S0, S1, f, Smax, Qmax, Df, Tmax, Tmin = tuple(best_params[0, :].tolist())  # 1013500
+# S0, S1, f, Smax, Qmax, Df, Tmax, Tmin = 0.0, 1303.004, 0.017, 1709.46, 18.47, 2.67, 0.176, -2.09  # 1013500
+# # f, Smax, Qmax, Df, Tmax, Tmin = 963.051, 217.796, 34.2572, 0.0558933, 0.304415, -1.00949  # 6431500
 
 # load data
 # train data
@@ -41,10 +44,18 @@ precp_series = all_data_df['Precp'].values
 temp_series = all_data_df['Temp'].values
 lday_series = all_data_df['Lday'].values
 
-t_series = np.linspace(0, len(precp_series) - 1, len(precp_series))
-precp_interp = PchipInterpolator(t_series, precp_series)
-temp_interp = PchipInterpolator(t_series, temp_series)
-lday_interp = PchipInterpolator(t_series, lday_series)
+# interpolate
+# t_series = np.linspace(0, len(precp_series) - 1, len(precp_series))
+# precp_interp = PchipInterpolator(t_series, precp_series)
+# temp_interp = PchipInterpolator(t_series, temp_series)
+# lday_interp = PchipInterpolator(t_series, lday_series)
+
+from torchcubicspline import (natural_cubic_spline_coeffs, NaturalCubicSpline)
+
+t_series = torch.linspace(0, len(precp_series) - 1, len(precp_series))
+precp_interp = NaturalCubicSpline(natural_cubic_spline_coeffs(t_series, torch.from_numpy(precp_series).unsqueeze(1)))
+temp_interp = NaturalCubicSpline(natural_cubic_spline_coeffs(t_series, torch.from_numpy(temp_series).unsqueeze(1)))
+lday_interp = NaturalCubicSpline(natural_cubic_spline_coeffs(t_series, torch.from_numpy(lday_series).unsqueeze(1)))
 
 # M50 model train
 
@@ -75,11 +86,12 @@ m50_model = M50(ET_net=et_pretrained_model, Q_net=q_pretrained_model, ode_lib=so
                 params=(f, Smax, Qmax, Df, Tmax, Tmin), interps=(precp_interp, temp_interp, lday_interp))
 
 # 3.train the model based on pytorch-lightning
-optimizer = torch.optim.Adam(m50_model.parameters(), lr=0.001)
+optimizer = torch.optim.AdamW(m50_model.parameters(), lr=0.001)
+learner_kwarg = {'model': m50_model, 'loss_metric': loss_metric, 'optimizer': optimizer}
 m50_leaner = BaseLearner(m50_model, loss_metric=loss_metric, optimizer=optimizer)
 m50_trained_model, m50_trained_learner = train(
     m50_leaner, m50_train_dataloader,
-    os.path.join(save_path, str(basin_id), 'train', 'M50-NSE'), max_epochs=100)
+    os.path.join(save_path, str(basin_id), 'train', 'M50-All'), max_epochs=100, **learner_kwarg)
 
 # 4.test the trained model
 train_real_arr, train_pred_arr = forecast(m50_trained_learner, m50_train_dataloader)
@@ -90,6 +102,9 @@ print('test r2 ' + str(r2_score(test_real_arr, test_pred_arr)))
 
 print('train mse ' + str(mean_squared_error(train_real_arr, train_pred_arr)))
 print('test mse ' + str(mean_squared_error(test_real_arr, test_pred_arr)))
+
+print('train mae ' + str(mean_absolute_error(train_real_arr, train_pred_arr)))
+print('test mae ' + str(mean_absolute_error(test_real_arr, test_pred_arr)))
 
 # 5.plot the train and test result
 plt.plot(train_real_arr, '--')

@@ -9,22 +9,12 @@ from pytorch_lightning.accelerators import CPUAccelerator, CUDAAccelerator
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, TQDMProgressBar
 
 
-class NSELoss1D(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, real, pred):
-        denominator = torch.sum(torch.pow(real - torch.mean(real), 2))
-        numerator = torch.sum(torch.pow(pred - real, 2))
-        return numerator / denominator
-
-
 class BaseLearner(pl.LightningModule):
     def __init__(self, model: nn.Module,
-                 loss_metric=torch.nn.MSELoss(), eval_metric_list=None, lr=0.01, optimizer=None):
+                 loss_metric=torch.nn.L1Loss(), eval_metric_list=None, lr=0.01, optimizer=None):
         super(BaseLearner, self).__init__()
         if eval_metric_list is None:
-            eval_metric_list = [torch.nn.L1Loss()]
+            eval_metric_list = [torch.nn.MSELoss()]
         self.model = model
         self.lr = lr
         self.optimizer = optimizer
@@ -35,7 +25,9 @@ class BaseLearner(pl.LightningModule):
         self.val_eval_metric_list = eval_metric_list
 
     def training_step(self, batch, batch_idx):
-        y, y_hat = self.predict_step(batch, batch_idx)
+        x, y, t = batch
+        y = y.squeeze(0)
+        y_hat = self.forward(x, t)
         for metric_idx, log_metric in enumerate(self.train_eval_metric_list):
             self.log('train_metric_' + str(metric_idx + 1), log_metric(y, y_hat),
                      prog_bar=True, on_step=True, on_epoch=False)
@@ -44,7 +36,9 @@ class BaseLearner(pl.LightningModule):
         return train_loss
 
     def validation_step(self, batch, batch_idx):
-        y, y_hat = self.predict_step(batch, batch_idx)
+        x, y, t = batch
+        y = y.squeeze(0)
+        y_hat = self.forward(x, t)
         for metric_idx, log_metric in enumerate(self.val_eval_metric_list):
             self.log('val_metric_' + str(metric_idx + 1), log_metric(y, y_hat),
                      prog_bar=True, on_step=True, on_epoch=True)
@@ -54,13 +48,19 @@ class BaseLearner(pl.LightningModule):
 
     def predict_step(self, batch, batch_idx: int, dataloader_idx: int = 0):
         x, y, t = batch
-        y_hat = self.model.forward(x, t)
+        y = y.squeeze(0)  # for batch training
+        y_hat = self.forward(x, t)
         return y, y_hat
+
+    def forward(self, x, t):
+        y_hat = self.model(x, t)
+        return y_hat
 
     def configure_optimizers(self):
         if self.optimizer is not None:
             return {"optimizer": self.optimizer,
-                    "lr_scheduler": torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.1)}
+                    "lr_scheduler": torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.1)
+                    }
         else:
             optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=1e-3)
             return {"optimizer": optimizer,
@@ -72,6 +72,7 @@ def get_trainer(max_epochs, checkpoint_path=None, callbacks=None, logger=True):
     trainer = pl.Trainer(
         max_epochs=max_epochs,
         gradient_clip_val=1,
+        log_every_n_steps=1,
         accelerator=CUDAAccelerator() if torch.cuda.is_available() else CPUAccelerator(),
         enable_checkpointing=True,
         logger=logger,
@@ -81,26 +82,39 @@ def get_trainer(max_epochs, checkpoint_path=None, callbacks=None, logger=True):
     return trainer
 
 
-def get_callbacks(check_point_path):
-    es = EarlyStopping(monitor="train_loss", mode="min", patience=10)
-    mc = ModelCheckpoint(dirpath=check_point_path, save_last=False,
-                         monitor="train_loss", mode="min", save_top_k=1,
-                         filename='{epoch}-{loss:.4f}')
-    bar = TQDMProgressBar(refresh_rate=1)
-    callbacks = [es, mc, bar]
-    return callbacks
-
-
-def train(learner, train_dataloaders, checkpoint_path, max_epochs=100, val_dataloaders=None):
-    file_path = os.path.join(checkpoint_path, 'model_state.pt')
-    if os.path.exists(file_path):
-        file_path = os.path.join(checkpoint_path, 'model_state.pt')
-        model = torch.load(file_path)
-        learner.model = model
+def get_callbacks(check_point_path, val_dataloaders=None):
+    if val_dataloaders is not None:
+        es = EarlyStopping(monitor="val_loss", mode="min", patience=10)
+        mc = ModelCheckpoint(dirpath=check_point_path, save_last=False,
+                             monitor="val_loss", mode="min", save_top_k=1,
+                             filename='{epoch}-{val_loss:.4f}')
+        bar = TQDMProgressBar(refresh_rate=1)
     else:
-        trainer = get_trainer(max_epochs, checkpoint_path, get_callbacks(checkpoint_path))
+        es = EarlyStopping(monitor="train_loss", mode="min", patience=10)
+        mc = ModelCheckpoint(dirpath=check_point_path, save_last=False,
+                             monitor="train_loss", mode="min", save_top_k=1,
+                             filename='{epoch}-{train_loss:.4f}')
+        bar = TQDMProgressBar(refresh_rate=1)
+    return [es, mc, bar]
+
+
+def train(learner, train_dataloaders, checkpoint_path, max_epochs=100, val_dataloaders=None, save_pt=False, **kwarg):
+    # file_path = os.path.join(checkpoint_path, 'model_state.pt')
+    if not os.path.exists(checkpoint_path):
+        os.makedirs(checkpoint_path)
+    ckpt_list = [f for f in os.listdir(checkpoint_path) if f.endswith('.ckpt')]
+    if len(ckpt_list) > 0:
+        file_path = os.path.join(checkpoint_path, ckpt_list[0])
+        learner = learner.load_from_checkpoint(file_path, **kwarg)
+        if save_pt:
+            torch.save(learner.model, os.path.join(checkpoint_path, 'model_state.pt'))
+        return learner.model, learner
+    else:
+        callbacks = get_callbacks(checkpoint_path, val_dataloaders)
+        trainer = get_trainer(max_epochs, checkpoint_path, callbacks)
         trainer.fit(learner, train_dataloaders=train_dataloaders, val_dataloaders=val_dataloaders)
-        torch.save(learner.model, os.path.join(checkpoint_path, 'model_state.pt'))
+        if save_pt:
+            torch.save(learner.model, os.path.join(checkpoint_path, 'model_state.pt'))
         model = learner.model
     return model, learner
 
@@ -146,10 +160,3 @@ def forecast2(model, dataloader, slide_window):
     y_pred_re[np.where(y_pred_re == 0)] = np.nan
     y_pred_mean = np.nanmean(y_pred_re, axis=0)
     return y_real_mean, y_pred_mean, y_real, y_pred
-
-
-if __name__ == '__main__':
-    nse = NSELoss1D()(torch.tensor([1., 2., 3., 4., 5., 6.]), torch.tensor([1., 1.5, 2.5, 3.6, 3.2, 7.8]))
-    from sklearn.metrics import r2_score
-
-    print(r2_score([1., 2., 3., 4., 5., 6.], [1., 1.5, 2.5, 3.6, 3.2, 7.8]))

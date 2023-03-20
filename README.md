@@ -1,8 +1,6 @@
 # Hydro-NODE
+
 Torch version for Hydro-NODE [https://github.com/marv-in/HydroNODE]
-
-
-
 
 ## Environment requirement
 
@@ -21,11 +19,32 @@ Torch version for Hydro-NODE [https://github.com/marv-in/HydroNODE]
 
 - `utils` provides some training methods, such as `train`, `forecast` and base learner object `BaseLearner`
 
-- This project only implements the training process of the Hydro-NODE, the testing is to be continued
+## My own idea
 
-- The accuracy of the M50 and M100 don't reach the origin project, some modify (GPU support) will also come in soon
+**A more neural training method for M50 and M100**
 
-- Currently, this project implements two solver for Hydro-NODE, including `torchcde` and `torchdiffeq`,
-the parameters `atol` and `rotl` can affect the 
-  
-  
+- Batch Training
+
+    - How does the batch size affect the accuracy ?
+
+        - incorrect nse evaluate for each batch training (is in consistent with the total series nse)
+
+    - How to determine the S0 for each batch
+
+        - constant S0
+
+        - optimize S0
+
+        - warm up method
+
+        - Neural ODE
+
+- Neural hydrology parameter
+
+    - hyperparameter  (hyperparameter searching)
+
+    - inner parameter (gradient optimization)
+
+- impact factor
+
+    - interpolate methods

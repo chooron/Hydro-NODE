@@ -16,6 +16,21 @@ Qb = lambda S1, f, Smax, Qmax: step_fct(S1) * step_fct(S1 - Smax) * Qmax + step_
 Qs = lambda S1, Smax: step_fct(S1) * step_fct(S1 - Smax) * (S1 - Smax)
 
 
+def rms_norm(tensor):
+    return tensor.pow(2).mean().sqrt()
+
+
+def make_norm(state):
+    state_size = state.numel()
+
+    def norm(aug_state):
+        y = aug_state[1:1 + state_size]
+        adj_y = aug_state[1 + state_size:1 + 2 * state_size]
+        return max(rms_norm(y), rms_norm(adj_y))
+
+    return norm
+
+
 class M50_NN(nn.Module):
     def __init__(self, input_dim, output_dim, hidden_units=16, means=None, stds=None):
         super().__init__()

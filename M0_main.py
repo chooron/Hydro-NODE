@@ -1,13 +1,13 @@
 import numpy as np
 import os
 import pandas as pd
-from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score, mean_squared_error
 
 from models.M0_models import M0
 from utils.data_utils import load_data, prepare_data
 
 # load data
-basin_id = 1013500
+basin_id = 6431500
 forcing_df, flow_df = load_data(basin_id)
 
 train_data_df, test_data_df, train_flow_df, test_flow_df, precp_interp, temp_interp, lday_interp = \
@@ -17,8 +17,12 @@ train_precp_series, test_precp_series = train_data_df['Precp'].values, test_data
 train_temp_series, test_temp_series = train_data_df['Temp'].values, test_data_df['Temp'].values
 train_Lday_series, test_Lday_series = train_data_df['Lday'].values, test_data_df['Lday'].values
 
-S0 = [0.0, 1303.0042478479704]
-param = f, Smax, Qmax, Df, Tmax, Tmin = (0.017, 1709.46, 18.47, 2.67, 0.176, -2.09)
+params_df = pd.read_csv(r'checkpoint/bucket_opt_init.csv')
+best_params = params_df[params_df['basin id'] == basin_id].values.squeeze()[1:-1]
+S0 = best_params[:2].tolist()
+param = f, Smax, Qmax, Df, Tmax, Tmin = tuple(best_params[2:].tolist())
+# S0 = [963.0510489149701,217.79595099306835]
+# param = f, Smax, Qmax, Df, Tmax, Tmin =0.016162871409461377,1357.9758639379108,34.2571623863836,0.05589328756698195,0.3044146285980963,-1.0094946926758326
 model = M0(precp_interp, temp_interp, lday_interp)
 # train result
 train_time_series = np.linspace(0, len(train_data_df) - 1, len(train_data_df))
@@ -59,5 +63,8 @@ if not os.path.exists(r'data/{}/'.format(basin_id)):
 train_data_df.to_csv(r'data/{}/train_data_df.csv'.format(basin_id), index=True)
 test_data_df.to_csv(r'data/{}/test_data_df.csv'.format(basin_id), index=True)
 
-print('train acc:' + str(r2_score(train_flow_df.values.squeeze(), train_Q_mech)))
-print('test acc:' + str(r2_score(test_flow_df.values.squeeze(), test_Q_mech)))
+print('train r2:' + str(r2_score(train_flow_df.values.squeeze(), train_Q_mech)))
+print('test r2:' + str(r2_score(test_flow_df.values.squeeze(), test_Q_mech)))
+
+print('train mse:' + str(mean_squared_error(train_flow_df.values.squeeze(), train_Q_mech)))
+print('test mse:' + str(mean_squared_error(test_flow_df.values.squeeze(), test_Q_mech)))
